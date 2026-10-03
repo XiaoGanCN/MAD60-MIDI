@@ -1,0 +1,19 @@
+# Build products
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
+.DS_Store
+._*
+
+# Captures produced by the reverse-engineering tools
+*.jsonl
+captures/
