@@ -46,64 +46,40 @@ func makeIcon(_ size: Int) -> CGImage? {
                                options: [])
     }
 
-    // Travel waveform across the upper half.
-    let wave = CGMutablePath()
-    let waveLeft = s * 0.19
-    let waveRight = s * 0.81
-    let waveCentre = s * 0.66
-    let amplitude = s * 0.072
-    let steps = 80
-    wave.move(to: CGPoint(x: waveLeft, y: waveCentre))
-    for step in 1...steps {
-        let t = CGFloat(step) / CGFloat(steps)
-        let x = waveLeft + t * (waveRight - waveLeft)
-        let envelope = sin(t * .pi)
-        let y = waveCentre + sin(t * .pi * 3.0) * amplitude * envelope
-        wave.addLine(to: CGPoint(x: x, y: y))
-    }
-    ctx.addPath(wave)
-    ctx.setStrokeColor(CGColor(red: 0.83, green: 0.91, blue: 1.0, alpha: 0.97))
-    ctx.setLineWidth(max(1, s * 0.042))
-    ctx.setLineCap(.round)
-    ctx.setLineJoin(.round)
-    ctx.strokePath()
-
     // Piano keyboard along the bottom.
     // The keyboard is sized to the flat part of the squircle's bottom edge and
     // drawn a little past the canvas, so the clip leaves the keys flush with the
     // bottom of the icon rather than floating above it.
-    let whiteCount = 6
-    let keyboardLeft = s * 0.235
-    let keyboardWidth = s * 0.53
-    let gap = s * 0.014
+    let whiteCount = 5
+    let keyboardLeft = s * 0.075
+    let keyboardWidth = s * 0.85
+    let gap = s * 0.012
     let keyWidth = (keyboardWidth - gap * CGFloat(whiteCount - 1)) / CGFloat(whiteCount)
-    let keyBottom = -s * 0.03
-    let whiteHeight = s * 0.33
+    let keyBottom = -s * 0.06
+    let whiteTop = s * 0.70
+    let whiteHeight = whiteTop - keyBottom
 
     for index in 0..<whiteCount {
-        // Slight height variation so it reads as keys rather than one block.
-        let factor = 0.92 + 0.08 * Double((index * 3) % 5) / 4.0
-        let height = whiteHeight * CGFloat(factor)
         let rect = CGRect(x: keyboardLeft + CGFloat(index) * (keyWidth + gap),
-                          y: keyBottom, width: keyWidth, height: height)
+                          y: keyBottom, width: keyWidth, height: whiteHeight)
         ctx.addPath(CGPath(roundedRect: rect,
-                           cornerWidth: keyWidth * 0.20, cornerHeight: keyWidth * 0.20,
+                           cornerWidth: keyWidth * 0.07, cornerHeight: keyWidth * 0.07,
                            transform: nil))
         ctx.setFillColor(CGColor(red: 0.97, green: 0.97, blue: 1.0, alpha: 0.97))
         ctx.fillPath()
     }
 
     // Black keys sit between the white ones, hanging from their top edge.
-    let blackHeight = whiteHeight * 0.60
-    for index in [0, 1, 3, 4] where index < whiteCount - 1 {
+    let blackHeight = whiteHeight * 0.52
+    for index in [0, 1, 3] where index < whiteCount - 1 {
         let centre = keyboardLeft + CGFloat(index + 1) * (keyWidth + gap) - gap * 0.5
-        let rect = CGRect(x: centre - keyWidth * 0.29,
-                          y: keyBottom + whiteHeight - blackHeight,
-                          width: keyWidth * 0.58, height: blackHeight)
+        let rect = CGRect(x: centre - keyWidth * 0.32,
+                          y: whiteTop - blackHeight,
+                          width: keyWidth * 0.64, height: blackHeight)
         ctx.addPath(CGPath(roundedRect: rect,
-                           cornerWidth: keyWidth * 0.14, cornerHeight: keyWidth * 0.14,
+                           cornerWidth: keyWidth * 0.10, cornerHeight: keyWidth * 0.10,
                            transform: nil))
-        ctx.setFillColor(CGColor(red: 0.13, green: 0.10, blue: 0.28, alpha: 0.94))
+        ctx.setFillColor(CGColor(red: 0.13, green: 0.10, blue: 0.28, alpha: 0.95))
         ctx.fillPath()
     }
 
