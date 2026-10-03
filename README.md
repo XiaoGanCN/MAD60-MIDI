@@ -33,6 +33,23 @@ understands.  MagMIDI does exactly that:
   ownership of its keyboard collection so the notes never reach your DAW.  That one
   feature needs the Input Monitoring permission, so it is off by default.
 
+## Download
+
+A pre-built universal-free (arm64) app is attached to the
+[latest release](https://github.com/XiaoGanCN/MAD60-MIDI/releases/latest):
+
+```
+MagMIDI-*.zip   →   unzip, move MagMIDI.app to Applications, right-click → Open once
+```
+
+The build is ad-hoc signed rather than notarised, so Gatekeeper warns the first time.
+Alternatively build it yourself, which takes about ten seconds:
+
+```bash
+xcodebuild -project MagMIDI.xcodeproj -scheme MagMIDI \
+           -configuration Release -destination 'platform=macOS,arch=arm64' build
+```
+
 ## Requirements
 
 * Apple silicon Mac (arm64)
