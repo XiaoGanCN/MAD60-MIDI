@@ -58,10 +58,10 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                Spacer(minLength: 12)
-                Divider()
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
+                Spacer(minLength: 20)
+                Divider().padding(.bottom, 10)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 7) {
                         Circle()
                             .fill(model.status.isConnected ? Color.green : Color.orange)
                             .frame(width: 7, height: 7)
@@ -71,16 +71,20 @@ struct ContentView: View {
                             .lineLimit(1)
                     }
                     HStack(spacing: 6) {
-                        Image(systemName: model.captureState.isCapturing ? "lock.fill" : "keyboard")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
-                        Text(model.captureState.isCapturing ? "Keys play MIDI only" : "Keys also type")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
+                        SidebarChip(
+                            symbol: model.captureState.isCapturing ? "lock.fill" : "keyboard",
+                            text: model.captureState.isCapturing ? "MIDI only" : "Types too",
+                            color: model.captureState.isCapturing ? .green : .orange
+                        )
+                        SidebarChip(
+                            symbol: model.engineRunning ? "music.note" : "pause.circle",
+                            text: model.engineRunning ? "\(model.soundingNotes)" : "off",
+                            color: model.engineRunning ? .accentColor : .orange
+                        )
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, 2)
+                .padding(.bottom, 2)
             }
             .padding(10)
             .frame(maxHeight: .infinity, alignment: .top)
@@ -98,12 +102,7 @@ struct ContentView: View {
             .navigationTitle(selection.title)
         }
         .toolbar {
-            ToolbarItemGroup {
-                if model.engineRunning {
-                    StatusPill(text: "MIDI \(model.soundingNotes) notes", color: .accentColor, symbol: "music.note")
-                } else {
-                    StatusPill(text: "MIDI stopped", color: .orange, symbol: "pause.circle")
-                }
+            ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     model.panic()
                 } label: {
@@ -149,6 +148,11 @@ struct DashboardView: View {
                                 color: model.status.isConnected ? .green : .orange,
                                 symbol: model.status.isConnected ? "checkmark.circle" : "magnifyingglass"
                             )
+                            StatusPill(
+                                text: model.engineRunning ? "MIDI · \(model.soundingNotes) notes" : "MIDI stopped",
+                                color: model.engineRunning ? .accentColor : .orange,
+                                symbol: model.engineRunning ? "music.note" : "pause.circle"
+                            )
                             Text("≈250 scans / second")
                                 .font(.system(size: 10))
                                 .foregroundStyle(.tertiary)
@@ -157,34 +161,45 @@ struct DashboardView: View {
                 }
 
                 Card(title: "Keys", systemImage: "pianokeys") {
-                    HStack(spacing: 10) {
-                        Text("Last note")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        Text("LAST NOTE")
+                            .font(.system(size: 10, weight: .semibold))
+                            .kerning(0.5)
+                            .foregroundStyle(.tertiary)
                         if let last = model.lastNote {
                             Text(KeyLayout.label(at: last.key))
-                                .font(.system(size: 12, weight: .semibold))
-                                .padding(.horizontal, 7).padding(.vertical, 2)
-                                .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+                                .font(.system(size: 13, weight: .semibold))
+                                .padding(.horizontal, 9).padding(.vertical, 3)
+                                .background(Capsule().fill(Color.accentColor.opacity(0.18)))
                             Text(KeyAction.noteName(last.note))
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
-                            Text("velocity \(last.velocity)")
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 20, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                            Text("velocity")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                            Text("\(last.velocity)")
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(last.velocity > 100 ? Color.accentColor : Color.primary)
                         } else {
-                            Text("play a key…")
-                                .font(.system(size: 11))
+                            Text("play any key…")
+                                .font(.system(size: 12))
                                 .foregroundStyle(.tertiary)
                         }
                         Spacer()
-                        Text("Sampled ~250×/s · travel, then velocity")
+                        Text("every key is sampled ~250×/s")
                             .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
                     }
+                    .frame(height: 30)
                     KeyboardGrid(selection: $selectedKey, showTravel: true, showLabels: true)
                     if let index = selectedKey {
                         Divider().padding(.vertical, 2)
                         HStack(spacing: 16) {
+                            Text("Selected")
+                                .font(.system(size: 10, weight: .semibold))
+                                .kerning(0.5)
+                                .foregroundStyle(.tertiary)
                             Text(KeyLayout.label(at: index))
                                 .font(.system(size: 15, weight: .semibold))
                             Text("row \(index / MAD60.columns) · column \(index % MAD60.columns)")
@@ -227,7 +242,7 @@ struct DashboardView: View {
                             VStack(alignment: .trailing, spacing: 6) {
                                 Button("Open Input Monitoring…") { model.openInputMonitoringSettings() }
                                     .buttonStyle(.borderedProminent)
-                                Text("Then quit and reopen MagMIDI")
+                                Text("Its path is now on your clipboard — use ＋, then ⇧⌘G to paste it")
                                     .font(.system(size: 10))
                                     .foregroundStyle(.secondary)
                             }
@@ -248,6 +263,28 @@ struct DashboardView: View {
             }
             .padding(20)
         }
+    }
+}
+
+/// A tiny status chip for the sidebar footer.
+struct SidebarChip: View {
+    let symbol: String
+    let text: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .semibold))
+            Text(text)
+                .font(.system(size: 10, weight: .medium))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(color.opacity(0.16)))
+        .foregroundStyle(color)
+        .fixedSize()
     }
 }
 

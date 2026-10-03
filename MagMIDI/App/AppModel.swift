@@ -81,6 +81,7 @@ final class AppModel: ObservableObject {
 
         keyboardCapture.onStateChange = { [weak self] state in
             self?.captureState = state
+            self?.writeDiagnostics()
         }
 
         hid.start()
@@ -90,9 +91,14 @@ final class AppModel: ObservableObject {
         }
         activity = "Scanning USB for MAD60…"
 
+        var ticks = 0
         meterTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.soundingNotes = self?.midi.soundingNoteCount ?? 0
+            guard let self else { return }
+            self.soundingNotes = self.midi.soundingNoteCount
+            ticks += 1
+            if ticks % 10 == 0 { self.writeDiagnostics() }
         }
+        writeDiagnostics()
     }
 
     // MARK: MIDI
@@ -132,6 +138,25 @@ final class AppModel: ObservableObject {
             keyboardCapture.deactivate()
             activity = "Keyboard left as a normal keyboard"
         }
+    }
+
+    /// Writes a small status file next to the configuration.  Purely for
+    /// troubleshooting — it makes permission and seize problems diagnosable
+    /// without guessing from the UI.
+    func writeDiagnostics() {
+        let payload: [String: Any] = [
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "deviceConnected": status.isConnected,
+            "inputMonitoringGranted": KeyboardCapture.hasInputMonitoring,
+            "captureEnabled": configuration.silenceKeyboard,
+            "captureState": captureState.description,
+            "captureAttempts": keyboardCapture.lastResults,
+            "midiRunning": engineRunning,
+            "midiSource": configuration.sourceName,
+            "midiSoundingNotes": midi.soundingNoteCount,
+            "configPath": store.path,
+        ]
+        store.writeDiagnostics(payload)
     }
 
     func openInputMonitoringSettings() {

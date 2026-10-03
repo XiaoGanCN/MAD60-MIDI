@@ -98,6 +98,22 @@ travel crosses the actuation point.  The full byte-level protocol, including the
 commands the vendor's own configurator uses for calibration, is documented in
 [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
+## Tuning velocity
+
+Strike speed is measured across the **whole** key motion — from the moment the key
+starts moving to the moment it crosses the actuation point — rather than from a short
+derivative, which makes it much steadier at a 5 ms sample interval.
+
+Two knobs in *Travel & Velocity* control it:
+
+* **Full velocity at** — the strike speed (in travel-fractions per second) that maps to
+  velocity 127. Lower it until a normal hard press reaches 127. The pane shows your
+  live strike speed so you can see what you actually produce.
+* **Curve** — shapes the response between soft and hard.
+
+The default of 14/s is calibrated so a firm press reaches 127. The Mapping inspector
+also shows a live `strike/s` figure per key while you tune.
+
 ## Design notes
 
 * The HID polling thread runs at `.userInteractive` quality of service and never
@@ -118,8 +134,12 @@ commands the vendor's own configurator uses for calibration, is documented in
 * By default the MAD60 continues to type while MagMIDI runs.  Switch on *Play MIDI
   only* (Overview or Settings) to stop that; macOS will ask for Input Monitoring the
   first time, and the keyboard is released again as soon as you switch the option
-  off or quit MagMIDI.  Because the app is ad-hoc signed, the grant is tied to the
-  build, so you may need to re-grant after rebuilding it yourself.
+  off or quit MagMIDI.
+* **Rebuilding the app invalidates the Input Monitoring grant.**  The app is ad-hoc
+  signed, so macOS identifies it by its code hash, which changes on every build.  After
+  rebuilding, re-enable MagMIDI under *Privacy & Security ▸ Input Monitoring* — the app's
+  path is copied to your clipboard when you press *Open Input Monitoring…*.  Signing with
+  a stable identity avoids this.
 * The *Peak depth* velocity mode deliberately adds about 20 ms of latency while a key
   settles.  *Strike speed* is the default and has no such cost.
 

@@ -87,7 +87,7 @@ enum VelocitySource: String, Codable, CaseIterable, Identifiable {
 // MARK: - Configuration
 
 struct Configuration: Codable {
-    var version = 2
+    var version = 3
 
     // MIDI
     var sourceName = "MAD60 Magnetic Keys"
@@ -109,9 +109,11 @@ struct Configuration: Codable {
     var velocityCurve = 1.0
     /// Multiplier applied to the measured strike speed.
     var velocitySensitivity = 1.0
-    /// Travel fraction per second that maps to full velocity.  A fast
-    /// bottom-out takes roughly 20 ms, i.e. about 50/s.
-    var fullScaleSpeed = 45.0
+    /// Travel fraction per second that maps to full velocity.  Strike speed is
+    /// measured from the start of the motion to the actuation point, so a firm
+    /// press (about 0.30 of travel in ~20 ms) reads roughly 15/s.  Lower values
+    /// make 127 easier to reach.
+    var fullScaleSpeed = 14.0
 
     // Continuous expression
     /// CC number driven by the deepest held key's travel, or nil when off.
@@ -290,8 +292,13 @@ final class ConfigStore {
             // v1 silenced the keyboard through the HID event system.  Never carry
             // that over automatically.
             config.silenceKeyboard = false
-            config.version = 2
         }
+        if config.version < 3 {
+            // v3 changed strike speed from a short derivative to a whole-strike
+            // average, so the old ceiling no longer means the same thing.
+            config.fullScaleSpeed = Configuration().fullScaleSpeed
+        }
+        config.version = 3
         return config
     }
 
@@ -300,6 +307,12 @@ final class ConfigStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(config) else { return }
         try? data.write(to: fileURL, options: .atomic)
+    }
+
+    func writeDiagnostics(_ payload: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: payload,
+                                                     options: [.prettyPrinted, .sortedKeys]) else { return }
+        try? data.write(to: directory.appendingPathComponent("diagnostics.json"), options: .atomic)
     }
 
     func export(_ config: Configuration, to url: URL) throws {

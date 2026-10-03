@@ -14,6 +14,8 @@ struct KeyTelemetry {
     var isDown = false
     var velocity: Int = 0
     var peak: Double = 0
+    /// Most recent strike speed, in travel-fractions per second.
+    var speed: Double = 0
 }
 
 final class TravelEngine {
@@ -36,6 +38,12 @@ final class TravelEngine {
         var span: Double = 900
         var hasRest = false
         var history: [(TimeInterval, Double)] = []
+        /// When and where the current downward motion began — the strike is
+        /// measured across the whole motion, which is far more stable than a
+        /// short derivative at 5 ms sampling.
+        var motionStart: TimeInterval?
+        var motionStartTravel: Double = 0
+        var speed: Double = 0
     }
 
     private var states = [KeyState](repeating: KeyState(), count: MAD60.keyCount)
@@ -146,7 +154,21 @@ final class TravelEngine {
             // Rolling history for strike-speed estimation (~15 ms window).
             state.history.append((time, travel))
             if state.history.count > 12 { state.history.removeFirst(state.history.count - 12) }
-            let speed = strikeSpeed(state.history, now: time)
+            // Track the start of the downward motion.
+            if travel <= 0.02 {
+                state.motionStart = nil
+            } else if state.motionStart == nil {
+                state.motionStart = time
+                state.motionStartTravel = travel
+            }
+
+            // Prefer the whole-strike average; fall back to the short-window
+            // derivative when the motion was already underway when we looked.
+            var speed = strikeSpeed(state.history, now: time)
+            if let start = state.motionStart, time - start >= 0.004, travel > state.motionStartTravel {
+                speed = (travel - state.motionStartTravel) / (time - start)
+            }
+            state.speed = speed
 
             let action = cfg.mappings[index] ?? KeyAction(kind: .none)
             let channel = action.channel > 0 ? action.channel : cfg.globalChannel
@@ -238,6 +260,7 @@ final class TravelEngine {
             telemetry[index].isDown = state.isDown
             telemetry[index].velocity = state.velocity
             telemetry[index].peak = state.peak
+            telemetry[index].speed = state.speed
             states[index] = state
         }
 

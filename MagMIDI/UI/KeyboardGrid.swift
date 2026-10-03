@@ -117,11 +117,14 @@ struct StatusPill: View {
                 .font(.system(size: 10, weight: .semibold))
             Text(text)
                 .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+                .fixedSize()
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background(Capsule().fill(color.opacity(0.15)))
         .foregroundStyle(color)
+        .fixedSize()
     }
 }
 

@@ -23,7 +23,7 @@ struct MappingView: View {
                     }
                     Card(title: "Keyboard", systemImage: "keyboard") {
                         KeyboardGrid(selection: $selectedKey, showTravel: true, showLabels: true)
-                        Text("Click a key to edit it.  Travel is shown live as you play.")
+                        Text("Click a key to edit it. Every key lights up live as you play; the inspector on the right follows your selection.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -90,7 +90,10 @@ struct KeyInspector: View {
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text("velocity \(model.telemetry[index].velocity)")
+                    Text(String(format: "%.1f/s strike", model.telemetry[index].speed))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Text("vel \(model.telemetry[index].velocity)")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }

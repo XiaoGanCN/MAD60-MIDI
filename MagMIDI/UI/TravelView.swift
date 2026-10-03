@@ -7,6 +7,11 @@ struct TravelView: View {
 
     private var config: Configuration { model.configuration }
 
+    /// Fastest strike seen in the most recent telemetry frame, for tuning.
+    private var liveSpeed: Double {
+        model.telemetry.map(\.speed).max() ?? 0
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -65,13 +70,16 @@ struct TravelView: View {
                         )
                     } else {
                         LabeledSlider(
-                            title: "Sensitivity",
-                            value: Binding(get: { config.velocitySensitivity }, set: { newValue in
-                                var c = config; c.velocitySensitivity = newValue; model.configuration = c
+                            title: "Full velocity at",
+                            value: Binding(get: { config.fullScaleSpeed }, set: { newValue in
+                                var c = config; c.fullScaleSpeed = newValue; model.configuration = c
                             }),
-                            range: 0.2...3.0,
-                            format: { String(format: "%.2f×", $0) }
+                            range: 4...40,
+                            format: { String(format: "%.1f travel/s", $0) }
                         )
+                        Text("Lower this until your normal hard press reaches 127.  Right now your fastest strike is about \(String(format: "%.1f", liveSpeed)) /s.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
                         LabeledSlider(
                             title: "Curve",
                             value: Binding(get: { config.velocityCurve }, set: { newValue in

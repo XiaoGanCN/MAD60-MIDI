@@ -56,7 +56,7 @@ struct SettingsView: View {
                     if model.captureState == .permissionNeeded {
                         HStack {
                             Button("Open Input Monitoring…") { model.openInputMonitoringSettings() }
-                            Text("then quit and reopen MagMIDI")
+                            Text("its path is on your clipboard — use ＋ then ⇧⌘G")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }

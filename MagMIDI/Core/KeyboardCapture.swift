@@ -63,11 +63,17 @@ final class KeyboardCapture {
 
     var onStateChange: ((State) -> Void)?
 
+    /// Human-readable log of what each seize attempt returned, for diagnostics.
+    private(set) var lastResults: [String] = []
+
     private var thread: Thread?
     private var running = false
     private var enabled = false
     private var manager: IOHIDManager?
-    private var seized: [IOHIDDevice] = []
+    private var startupLog: [String] = []
+    /// Seized devices keyed by registry ID, which stays stable across the
+    /// wrapper objects `IOHIDManagerCopyDevices` hands back on each call.
+    private var seized: [UInt64: IOHIDDevice] = [:]
     private let lock = NSLock()
 
     // MARK: public API
@@ -96,7 +102,13 @@ final class KeyboardCapture {
         state = .off
     }
 
+    /// Opens the Input Monitoring pane and puts this app's path on the
+    /// clipboard, because adding an app there means finding it in a file
+    /// picker and the build path is long.
     static func openInputMonitoringSettings() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(Bundle.main.bundlePath, forType: .string)
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!
         NSWorkspace.shared.open(url)
     }
@@ -109,19 +121,30 @@ final class KeyboardCapture {
 
     private func run() {
         let m = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        // Match on vendor/product only.  Filtering by the keyboard usage page in
+        // the *matching* dictionary makes enumeration itself gated by Input
+        // Monitoring, so without the permission the manager would silently see
+        // no devices and we could never report why.  The usage filter is applied
+        // per device below instead.
         IOHIDManagerSetDeviceMatching(m, [
             kIOHIDVendorIDKey: MAD60.vendorID,
             kIOHIDProductIDKey: MAD60.productID,
-            kIOHIDPrimaryUsagePageKey: 0x01,
         ] as CFDictionary)
         IOHIDManagerScheduleWithRunLoop(m, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
         manager = m
-        _ = IOHIDManagerOpen(m, IOOptionBits(kIOHIDOptionsTypeNone))
+        let openResult = IOHIDManagerOpen(m, IOOptionBits(kIOHIDOptionsTypeNone))
+        startupLog = [
+            "listenEventAccess: \(IOHIDCheckAccess(kIOHIDRequestTypeListenEvent).rawValue)",
+            "managerOpen: \(openResult)",
+        ]
 
-        // Ask once, on this worker thread — the call can block while the system
-        // prompt is on screen, which must never happen on the main thread.
+        // Trigger the permission prompt on a detached queue.  IOHIDRequestAccess
+        // blocks until the system prompt is answered, so it must never sit in
+        // front of the seize loop.
         if IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) != kIOHIDAccessTypeGranted {
-            _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+            DispatchQueue.global(qos: .utility).async {
+                _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+            }
         }
 
         while running {
@@ -140,37 +163,82 @@ final class KeyboardCapture {
     }
 
     private func attempt() {
-        guard let manager, let set = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>, !set.isEmpty else {
+        guard let manager else {
+            lastResults = startupLog + ["manager deallocated"]
+            state = .deviceMissing
+            return
+        }
+        guard let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else {
+            lastResults = startupLog + ["IOHIDManagerCopyDevices returned nil"]
+            state = .deviceMissing
+            return
+        }
+        guard !devices.isEmpty else {
+            lastResults = startupLog + ["matched 0 devices"]
+            // Do not drop a seize just because enumeration was momentarily empty.
+            state = .deviceMissing
+            return
+        }
+        let set = devices
+
+        // Key devices by their true IOKit registry entry ID.  The "RegistryID"
+        // *property* is not exposed through IOHIDDeviceGetProperty, so ask the
+        // service itself; this ID is stable across CopyDevices calls.
+        var byID: [UInt64: IOHIDDevice] = [:]
+        for device in set {
+            let service = IOHIDDeviceGetService(device)
+            guard service != 0 else { continue }
+            var entryID: UInt64 = 0
+            guard IORegistryEntryGetRegistryEntryID(service, &entryID) == KERN_SUCCESS else { continue }
+            byID[entryID] = device
+        }
+        if byID.isEmpty {
+            lastResults = startupLog + ["\(set.count) devices, none exposing a registry entry"]
             state = .deviceMissing
             return
         }
 
+        // Only drop devices that are genuinely gone.  Never close one merely
+        // because a property lookup was inconclusive — doing so silently
+        // releases the seize and the keyboard starts typing again.
+        releaseMissing(present: Set(byID.keys))
+
         var denied = false
         var held = 0
+        var log: [String] = []
 
-        for device in set {
+        for (registryID, device) in byID.sorted(by: { $0.key < $1.key }) {
+            let page = (IOHIDDeviceGetProperty(device, kIOHIDPrimaryUsagePageKey as CFString) as? NSNumber)?.intValue ?? 0
             let usage = (IOHIDDeviceGetProperty(device, kIOHIDPrimaryUsageKey as CFString) as? NSNumber)?.intValue ?? 0
+            // Never touch the vendor analogue collection — that is how we play.
+            guard page == 0x01 else {
+                log.append("registry \(registryID) usage page 0x\(String(page, radix: 16)): left alone")
+                continue
+            }
             // 0x06 is the boot-keyboard collection, which macOS reserves for the
             // system keyboard and refuses to hand over.  It carries no key data
             // on this board, so leaving it alone costs nothing.
-            guard usage != 0x06 else { continue }
-
-            if isSeized(device) { held += 1; continue }
+            guard usage != 0x06 else {
+                log.append("registry \(registryID) usage \(usage): reserved by macOS, skipped")
+                continue
+            }
+            if isSeized(registryID) { held += 1; log.append("registry \(registryID) usage \(usage): held"); continue }
 
             let result = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
+            log.append("registry \(registryID) usage \(usage): seize -> \(result)")
             if result == kIOReturnSuccess {
-                lock.lock(); seized.append(device); lock.unlock()
+                lock.lock(); seized[registryID] = device; lock.unlock()
                 held += 1
             } else if result == kIOReturnNotPermitted || result == kIOReturnNotPrivileged {
                 denied = true
             } else if result != kIOReturnExclusiveAccess {
+                lastResults = log
                 state = .failed("Could not capture the keyboard (IOKit error \(result))")
                 return
             }
         }
 
-        pruneDisconnected()
-
+        lastResults = log
         if held > 0 {
             state = .captured
         } else if denied {
@@ -180,20 +248,20 @@ final class KeyboardCapture {
         }
     }
 
-    private func pruneDisconnected() {
+    /// Closes and forgets any seized device that is no longer attached.
+    private func releaseMissing(present: Set<UInt64>) {
         lock.lock()
-        let alive = seized.filter { IOHIDDeviceGetProperty($0, kIOHIDProductKey as CFString) != nil }
-        let dead = seized.filter { device in !alive.contains(where: { $0 === device }) }
-        seized = alive
+        let gone = seized.filter { !present.contains($0.key) }
+        for key in gone.keys { seized.removeValue(forKey: key) }
         lock.unlock()
-        for device in dead {
+        for (_, device) in gone {
             IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
         }
     }
 
     private func releaseAll() {
         lock.lock()
-        let devices = seized
+        let devices = seized.values
         seized.removeAll()
         lock.unlock()
         for device in devices {
@@ -201,9 +269,9 @@ final class KeyboardCapture {
         }
     }
 
-    private func isSeized(_ device: IOHIDDevice) -> Bool {
+    private func isSeized(_ registryID: UInt64) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return seized.contains { $0 === device }
+        return seized[registryID] != nil
     }
 
     private func pump(_ seconds: TimeInterval) {
