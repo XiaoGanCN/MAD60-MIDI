@@ -7,10 +7,6 @@ struct TravelView: View {
 
     private var config: Configuration { model.configuration }
 
-    /// Fastest strike seen in the most recent telemetry frame, for tuning.
-    private var liveSpeed: Double {
-        model.telemetry.map(\.speed).max() ?? 0
-    }
 
     var body: some View {
         ScrollView {
@@ -74,10 +70,58 @@ struct TravelView: View {
                             value: Binding(get: { config.fullScaleSpeed }, set: { newValue in
                                 var c = config; c.fullScaleSpeed = newValue; model.configuration = c
                             }),
-                            range: 4...40,
+                            range: 4...80,
                             format: { String(format: "%.1f travel/s", $0) }
                         )
-                        Text("Lower this until your normal hard press reaches 127.  Right now your fastest strike is about \(String(format: "%.1f", liveSpeed)) /s.")
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Text("Last strike")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                if let strike = model.lastStrike, strike.speed > 0 {
+                                    Text(String(format: "%.1f", strike.speed))
+                                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                                        .monospacedDigit()
+                                    Text("travel/s →")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.tertiary)
+                                    Text("velocity")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.tertiary)
+                                    Text("\(strike.velocity)")
+                                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                                        .monospacedDigit()
+                                        .foregroundStyle(strike.velocity > 110 ? Color.accentColor : Color.primary)
+                                } else {
+                                    Text("play a hard note…")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                            HStack(spacing: 8) {
+                                Text("Hardest in the last 10 s")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                Text(String(format: "%.1f travel/s", model.peakStrikeSpeed))
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .monospacedDigit()
+                                Button("Reset") { model.resetPeakStrike() }
+                                    .buttonStyle(.borderless)
+                                    .font(.system(size: 11))
+                            }
+                        }
+                        Text("“travel/s” is how much of the key's full travel it covers per second, so it does not depend on the key. Play a few notes as hard as you normally would and set “Full velocity at” just below your hardest strike, so a firm press reaches 127.")
+                        LabeledSlider(
+                            title: "Timing damper",
+                            value: Binding(get: { config.velocityDamperMs }, set: { newValue in
+                                var c = config; c.velocityDamperMs = newValue; model.configuration = c
+                            }),
+                            range: 0...20,
+                            format: { $0 < 0.5 ? "off — lowest latency" : String(format: "%.0f ms", $0) }
+                        )
+                        Text("How long to keep listening before a note fires. A few milliseconds trades latency for a steadier reading, and on a quick press it lets the measurement run to the bottom of the key's travel — the classic “time from top to bottom” approach. Raise it if fast repeated notes still feel uneven; set it to 0 for the lowest possible latency.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                         LabeledSlider(
@@ -90,9 +134,21 @@ struct TravelView: View {
                         )
                     }
 
-                    VelocityCurveView(config: config)
-                        .frame(height: 110)
+                    VelocityCurveView(config: config, history: model.strikeHistory)
+                        .frame(height: 150)
                         .padding(.top, 4)
+                    HStack(spacing: 14) {
+                        Label("response curve", systemImage: "line.diagonal")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        Label("\(model.strikeHistory.count) recent strike\(model.strikeHistory.count == 1 ? "" : "s")", systemImage: "circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.accentColor)
+                        Spacer()
+                        Text("Play a range of soft→hard notes to fill this in.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
                 }
 
                 Card(title: "Expression", systemImage: "waveform") {
@@ -182,46 +238,104 @@ struct LabeledSlider: View {
     }
 }
 
-/// Draws velocity against strike speed (or depth) using the current settings.
+/// Plots the configured response curve together with every recent strike, so
+/// the relationship between how hard you play and the velocity you get is
+/// visible rather than guessed at.
 struct VelocityCurveView: View {
     let config: Configuration
+    let history: [(speed: Double, velocity: Int)]
+
+    private var maxSpeed: Double { max(4.0, config.fullScaleSpeed * 1.45) }
+
+    /// Mirrors VelocitySource.strikeSpeed in TravelEngine.
+    private func velocity(for speed: Double) -> Double {
+        switch config.velocitySource {
+        case .fixed:
+            return Double(config.fixedVelocity)
+        case .peakDepth:
+            // The x axis is speed, which does not drive velocity in this mode;
+            // show the average of what actually happened instead.
+            guard !history.isEmpty else { return 0 }
+            let peak = config.actuation + (1 - config.actuation)
+            _ = peak
+            return history.map { Double($0.velocity) }.reduce(0, +) / Double(history.count)
+        case .strikeSpeed:
+            let normalized = max(0, speed) / max(1, config.fullScaleSpeed) * max(0.05, config.velocitySensitivity)
+            let shaped = pow(min(1.0, normalized), max(0.2, config.velocityCurve))
+            return 1 + shaped * 126
+        }
+    }
 
     var body: some View {
         GeometryReader { geo in
-            let steps = 120
-            let points: [CGPoint] = (0...steps).map { step in
-                let x = Double(step) / Double(steps)
-                let velocity: Double
-                if config.velocitySource == .fixed {
-                    velocity = Double(config.fixedVelocity) / 127.0
-                } else {
-                    let scaled = min(1.0, x * config.velocitySensitivity)
-                    velocity = pow(scaled, max(0.2, config.velocityCurve))
-                }
-                return CGPoint(x: x * geo.size.width,
-                               y: geo.size.height - velocity * geo.size.height)
+            let width = geo.size.width
+            let height = geo.size.height
+            let steps = 140
+            let curve: [CGPoint] = (0...steps).map { step in
+                let speed = maxSpeed * Double(step) / Double(steps)
+                return CGPoint(x: CGFloat(speed / maxSpeed) * width,
+                               y: height - CGFloat(min(1, velocity(for: speed) / 127)) * height)
             }
-            ZStack {
+            ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.primary.opacity(0.04))
+
+                // Reference lines at velocity 32/64/96.
+                ForEach([32, 64, 96], id: \.self) { mark in
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.07))
+                        .frame(height: 1)
+                        .offset(y: height - CGFloat(Double(mark) / 127) * height)
+                }
+
+                // The configured response.
                 Path { path in
-                    path.move(to: CGPoint(x: 0, y: geo.size.height))
-                    for point in points { path.addLine(to: point) }
-                    path.addLine(to: CGPoint(x: geo.size.width, y: geo.size.height))
+                    path.move(to: CGPoint(x: 0, y: height))
+                    for point in curve { path.addLine(to: point) }
+                    path.addLine(to: CGPoint(x: width, y: height))
                     path.closeSubpath()
                 }
-                .fill(Color.accentColor.opacity(0.15))
+                .fill(Color.accentColor.opacity(0.12))
+
                 Path { path in
-                    path.move(to: points[0])
-                    for point in points.dropFirst() { path.addLine(to: point) }
+                    path.move(to: curve[0])
+                    for point in curve.dropFirst() { path.addLine(to: point) }
                 }
                 .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                .background(
-                    VStack {
+
+                // The full-velocity threshold.
+                Rectangle()
+                    .fill(Color.accentColor.opacity(0.35))
+                    .frame(width: 1)
+                    .offset(x: CGFloat(config.fullScaleSpeed / maxSpeed) * width)
+
+                // Actual strikes.
+                ForEach(Array(history.enumerated()), id: \.offset) { _, strike in
+                    Circle()
+                        .fill(Color.accentColor.opacity(0.85))
+                        .overlay(Circle().stroke(Color.white.opacity(0.6), lineWidth: 0.5))
+                        .frame(width: 6, height: 6)
+                        .position(x: min(width, CGFloat(strike.speed / maxSpeed) * width),
+                                  y: height - CGFloat(min(1, Double(strike.velocity) / 127)) * height)
+                }
+
+                VStack {
+                    Spacer()
+                    HStack {
+                        Text("soft / slow").font(.system(size: 9)).foregroundStyle(.tertiary)
                         Spacer()
-                        HStack { Text("slow").font(.system(size: 9)).foregroundStyle(.tertiary); Spacer(); Text("fast").font(.system(size: 9)).foregroundStyle(.tertiary) }
-                    }.padding(6)
-                )
+                        Text("strike speed →  \(String(format: "%.0f", maxSpeed)) travel/s")
+                            .font(.system(size: 9)).foregroundStyle(.tertiary)
+                    }
+                }
+                .padding(6)
+                VStack(alignment: .leading) {
+                    Text("127").font(.system(size: 9)).foregroundStyle(.tertiary)
+                    Spacer()
+                    Text("1").font(.system(size: 9)).foregroundStyle(.tertiary)
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 4)
             }
         }
     }

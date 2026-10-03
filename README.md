@@ -104,11 +104,17 @@ Strike speed is measured across the **whole** key motion — from the moment the
 starts moving to the moment it crosses the actuation point — rather than from a short
 derivative, which makes it much steadier at a 5 ms sample interval.
 
-Two knobs in *Travel & Velocity* control it:
+Three knobs in *Travel & Velocity* control it:
 
 * **Full velocity at** — the strike speed (in travel-fractions per second) that maps to
   velocity 127. Lower it until a normal hard press reaches 127. The pane shows your
   live strike speed so you can see what you actually produce.
+* **Timing damper** — how long to keep listening before the note fires, in
+  milliseconds (0–20, default 3). Even one extra scan transforms the reliability of
+  the measurement, because the sample that completes the strike has arrived; on a fast
+  press a larger value lets the measurement run to the bottom of the travel, which is
+  the classic "time from top to bottom" velocity method. Set it to 0 for the absolute
+  lowest latency.
 * **Curve** — shapes the response between soft and hard.
 
 The default of 14/s is calibrated so a firm press reaches 127. The Mapping inspector

@@ -30,8 +30,9 @@ final class TravelEngine {
         var peak: Double = 0
         var velocity: Int = 0
         var firingNote = -1
-        var pendingNote: (note: Int, channel: Int)?
-        var pendingSince: TimeInterval = 0
+        var fireChannel = 1
+        var crossingTime: TimeInterval = 0
+        var pendingFire = false
         var lastCC = -1
         var lastBend = -1
         var rest: Double = 0
@@ -43,6 +44,9 @@ final class TravelEngine {
         /// short derivative at 5 ms sampling.
         var motionStart: TimeInterval?
         var motionStartTravel: Double = 0
+        var motionArmed = true
+        var fallCount = 0
+        var sampleTime: TimeInterval = 0
         var speed: Double = 0
     }
 
@@ -51,8 +55,8 @@ final class TravelEngine {
 
     /// Published on the main thread, throttled.
     var onTelemetry: (([KeyTelemetry]) -> Void)?
-    /// Fired (on the polling thread) as (matrixIndex, note, velocity).
-    var onNoteFired: ((Int, Int, Int) -> Void)?
+    /// Fired (on the polling thread) as (matrixIndex, note, velocity, strikeSpeed).
+    var onNoteFired: ((Int, Int, Int, Double) -> Void)?
 
     private var lastPublish: TimeInterval = 0
     private var lastAftertouch = -1
@@ -61,6 +65,19 @@ final class TravelEngine {
 
     /// Rest positions measured at startup / calibration, in ADC counts.
     private(set) var restValues = [Double](repeating: 0, count: MAD60.keyCount)
+
+    /// Hardest strike seen recently, in travel-fractions per second.  Tracked on
+    /// the polling thread so the peak is not missed between UI frames.
+    private(set) var peakStrikeSpeed: Double = 0
+    private var peakStrikeTime: TimeInterval = 0
+    private let peakWindow: TimeInterval = 10
+
+    /// Peak speed of the most recent strike, and the velocity it produced.
+    private(set) var lastStrikeSpeed: Double = 0
+    private(set) var lastVelocity: Int = 0
+
+    /// Travel at which downward motion is considered to have started.
+    private let motionThreshold = 0.04
 
     init(midi: MIDIEngine, configuration: Configuration) {
         self.midi = midi
@@ -148,27 +165,67 @@ final class TravelEngine {
             }
 
             let travel = max(0, min(1, (state.rest - raw) / state.span))
-            state.previousTravel = state.travel
+            let previousTravel = state.travel
+            let previousTime = state.sampleTime
             state.travel = travel
+            state.sampleTime = time
 
-            // Rolling history for strike-speed estimation (~15 ms window).
+            // Rolling history for the fallback derivative estimate.
             state.history.append((time, travel))
-            if state.history.count > 12 { state.history.removeFirst(state.history.count - 12) }
-            // Track the start of the downward motion.
-            if travel <= 0.02 {
-                state.motionStart = nil
-            } else if state.motionStart == nil {
-                state.motionStart = time
-                state.motionStartTravel = travel
+            if state.history.count > 48 { state.history.removeFirst(state.history.count - 48) }
+
+            // A strike is delimited by the key's own motion rather than by an
+            // absolute travel threshold: it ends when the key starts coming back
+            // up, and the next one begins at the following local minimum.  Using
+            // a near-rest threshold instead broke down during fast repeated
+            // playing, because the key never returned far enough to re-arm and
+            // the next press then measured across the previous one - reporting a
+            // several-times-lower speed.
+            if travel < previousTravel - 0.001 {
+                state.fallCount += 1
+            } else if travel > previousTravel + 0.001 {
+                state.fallCount = 0
             }
 
-            // Prefer the whole-strike average; fall back to the short-window
-            // derivative when the motion was already underway when we looked.
+            if state.fallCount >= 2 || travel < motionThreshold {
+                state.motionArmed = true
+                state.motionStart = nil
+            } else if state.motionArmed, travel > previousTravel + 0.002 {
+                state.motionStart = previousTime
+                state.motionStartTravel = previousTravel
+                state.motionArmed = false
+            }
+
+            // Strike speed from a least-squares fit through every sample of the
+            // motion up to the interpolated actuation crossing.  Averaging over
+            // the whole movement rather than two points removes most of the
+            // sampling noise that made velocity feel inconsistent.
             var speed = strikeSpeed(state.history, now: time)
-            if let start = state.motionStart, time - start >= 0.004, travel > state.motionStartTravel {
-                speed = (travel - state.motionStartTravel) / (time - start)
+            if let start = state.motionStart {
+                var endTime = time
+                var endTravel = travel
+                if travel >= cfg.actuation, previousTravel < cfg.actuation, travel > previousTravel {
+                    let fraction = (cfg.actuation - previousTravel) / (travel - previousTravel)
+                    endTime = previousTime + fraction * (time - previousTime)
+                    endTravel = cfg.actuation
+                }
+                let distance = endTravel - state.motionStartTravel
+                if distance > 0.05, endTime - start >= 0.002 {
+                    // Only samples up to the crossing take part in the fit; the
+                    // current sample can already be well past the actuation
+                    // point on a fast press and would inflate the slope.
+                    var points = state.history.filter { $0.0 >= start && $0.0 <= endTime }
+                    points.append((endTime, endTravel))
+                    speed = points.count >= 3
+                        ? Self.slope(of: points)
+                        : distance / (endTime - start)
+                }
             }
             state.speed = speed
+            if speed > peakStrikeSpeed {
+                peakStrikeSpeed = speed
+                peakStrikeTime = time
+            }
 
             let action = cfg.mappings[index] ?? KeyAction(kind: .none)
             let channel = action.channel > 0 ? action.channel : cfg.globalChannel
@@ -182,33 +239,32 @@ final class TravelEngine {
                 if !state.isDown && travel >= cfg.actuation {
                     state.isDown = true
                     state.peak = travel
-                    state.velocity = makeVelocity(speed: speed, peak: travel, cfg: cfg)
                     state.firingNote = action.number
-                    if cfg.velocitySource == .peakDepth {
-                        state.pendingNote = (action.number, channel)
-                        state.pendingSince = time
-                    } else {
-                        fireNote(index: index, note: action.number, velocity: state.velocity, channel: channel)
+                    state.fireChannel = channel
+                    state.crossingTime = time
+                    state.pendingFire = true
+                    // With no damper the note fires immediately; otherwise a few
+                    // milliseconds of extra motion are gathered first, which
+                    // steadies fast playing and lets a quick press be measured
+                    // all the way to the bottom of its travel.
+                    if cfg.velocityDamperMs <= 0 {
+                        fire(&state, index: index, speed: speed, cfg: cfg)
                     }
                 } else if state.isDown {
                     state.peak = max(state.peak, travel)
-                    if let pending = state.pendingNote {
-                        let settled = speed < cfg.fullScaleSpeed * 0.08 || (time - state.pendingSince) > 0.02
-                        if settled {
-                            let velocity = makeVelocity(speed: speed, peak: state.peak, cfg: cfg)
-                            state.velocity = velocity
-                            fireNote(index: index, note: pending.note, velocity: velocity, channel: pending.channel)
-                            state.pendingNote = nil
-                        }
+                    if state.pendingFire {
+                        let elapsedMs = (time - state.crossingTime) * 1000
+                        let settled = elapsedMs >= cfg.velocityDamperMs
+                            || state.fallCount >= 1
+                            || travel > 0.97
+                        if settled { fire(&state, index: index, speed: speed, cfg: cfg) }
                     }
                     if travel < cfg.release {
-                        if let pending = state.pendingNote {
-                            fireNote(index: index, note: pending.note, velocity: state.velocity, channel: pending.channel)
-                            state.pendingNote = nil
-                        }
+                        if state.pendingFire { fire(&state, index: index, speed: speed, cfg: cfg) }
                         release(&state, cfg: cfg, channel: channel)
                     }
                 }
+
 
             case .cc where action.continuous:
                 // CC follows the key's travel for as long as it is held.
@@ -264,6 +320,8 @@ final class TravelEngine {
             states[index] = state
         }
 
+        if peakStrikeSpeed > 0, time - peakStrikeTime > peakWindow { peakStrikeSpeed = 0 }
+
         applyGlobalExpression(deepestHeldTravel: deepestHeldTravel, cfg: cfg)
 
         if time - lastPublish > 1.0 / 30.0 {
@@ -273,19 +331,46 @@ final class TravelEngine {
         }
     }
 
+    /// Sends the note for a key that has already passed its actuation point.
+    private func fire(_ state: inout KeyState, index: Int, speed: Double, cfg: Configuration) {
+        guard state.pendingFire, state.firingNote >= 0 else { return }
+        let velocity = makeVelocity(speed: speed, peak: state.peak, cfg: cfg)
+        state.velocity = velocity
+        state.pendingFire = false
+        lastStrikeSpeed = speed
+        lastVelocity = velocity
+        fireNote(index: index, note: state.firingNote, velocity: velocity, channel: state.fireChannel)
+    }
+
     private func fireNote(index: Int, note: Int, velocity: Int, channel: Int) {
         midi.noteOn(note: note, velocity: velocity, channel: channel)
-        onNoteFired?(index, note, velocity)
+        onNoteFired?(index, note, velocity, lastStrikeSpeed)
     }
 
     private func release(_ state: inout KeyState, cfg: Configuration, channel: Int) {
         guard state.isDown else { return }
         state.isDown = false
         state.peak = 0
+        state.pendingFire = false
         if state.firingNote >= 0 {
             midi.noteOff(note: state.firingNote, channel: channel)
             state.firingNote = -1
         }
+    }
+
+    /// Least-squares slope of travel against time, for a given set of samples.
+    private static func slope(of points: [(TimeInterval, Double)]) -> Double {
+        guard points.count >= 2 else { return 0 }
+        let origin = points[0].0
+        let count = Double(points.count)
+        var sumX = 0.0, sumY = 0.0, sumXX = 0.0, sumXY = 0.0
+        for (time, travel) in points {
+            let x = time - origin
+            sumX += x; sumY += travel; sumXX += x * x; sumXY += x * travel
+        }
+        let denominator = count * sumXX - sumX * sumX
+        guard abs(denominator) > 1e-12 else { return 0 }
+        return (count * sumXY - sumX * sumY) / denominator
     }
 
     /// Travel units (fraction of full travel) per second, measured over a short
@@ -355,11 +440,18 @@ final class TravelEngine {
         }
     }
 
+    func resetPeakStrike() {
+        peakStrikeSpeed = 0
+        peakStrikeTime = 0
+        lastStrikeSpeed = 0
+        lastVelocity = 0
+    }
+
     /// Everything off — used by the panic button and when stopping.
     func reset() {
         for index in 0..<MAD60.keyCount {
             states[index].isDown = false
-            states[index].pendingNote = nil
+            states[index].pendingFire = false
             states[index].lastCC = -1
             states[index].lastBend = -1
             telemetry[index] = KeyTelemetry()

@@ -13,7 +13,7 @@ struct CalibrationView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Card(title: "Travel calibration", systemImage: "slider.horizontal.below.rectangle") {
-                    Text("MagMIDI measures each key's resting ADC value on connect.  A full-travel pass teaches it the bottom of each key, which makes travel percentages and strike velocity accurate across the whole board — the same idea as the vendor's “axial alignment” page, but stored locally and used for playing rather than for setup.")
+                    Text("MagMIDI measures each key's resting ADC value on connect.  A full-travel pass teaches it the bottom of each key, which makes travel percentages and strike velocity accurate across the whole board — the same idea as the vendor's “axial alignment” page, but stored locally and used for playing rather than for setup. The pass has no time limit: start it, work across the keyboard, then press Finish.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
 
@@ -26,11 +26,27 @@ struct CalibrationView: View {
                         .buttonStyle(.borderedProminent)
                         .disabled(model.isMeasuringRest)
 
-                        Button {
-                            model.beginRangeMeasurement(duration: 10)
-                        } label: {
-                            Label("Measure full travel (10 s)", systemImage: "arrow.down.to.line")
+                        if model.isMeasuringRange {
+                            Button {
+                                model.finishRangeMeasurement()
+                            } label: {
+                                Label("Finish full-travel pass", systemImage: "checkmark.circle")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            Button(role: .cancel) {
+                                model.cancelRangeMeasurement()
+                            } label: {
+                                Text("Cancel")
+                            }
+                        } else {
+                            Button {
+                                model.beginRangeMeasurement()
+                            } label: {
+                                Label("Measure full travel", systemImage: "arrow.down.to.line")
+                            }
+                            .disabled(model.isMeasuringRest)
                         }
+
                         Button(role: .destructive) {
                             model.resetCalibration()
                         } label: {
@@ -38,9 +54,14 @@ struct CalibrationView: View {
                         }
                     }
 
-                    if model.isMeasuringRest || model.calibrationProgress > 0 && model.calibrationProgress < 1 {
-                        ProgressView(value: model.isMeasuringRest ? nil : model.calibrationProgress)
+                    if model.isMeasuringRange {
+                        ProgressView(value: model.calibrationProgress)
                             .progressViewStyle(.linear)
+                        Text("Press every key all the way down at your own pace — \(model.measuredKeyCount) of \(KeyLayout.positions.count) keys measured. Pressing Finish when you are done.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    } else if model.isMeasuringRest {
+                        ProgressView().progressViewStyle(.linear)
                     }
 
                     HStack {

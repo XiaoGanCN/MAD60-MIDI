@@ -109,6 +109,12 @@ struct Configuration: Codable {
     var velocityCurve = 1.0
     /// Multiplier applied to the measured strike speed.
     var velocitySensitivity = 1.0
+    /// How long to keep gathering motion before a note fires, in milliseconds.
+    /// A few milliseconds of latency buys a much steadier strike measurement,
+    /// and on a fast press it lets the measurement run to the bottom of the
+    /// key's travel.
+    var velocityDamperMs = 3.0
+
     /// Travel fraction per second that maps to full velocity.  Strike speed is
     /// measured from the start of the motion to the actuation point, so a firm
     /// press (about 0.30 of travel in ~20 ms) reads roughly 15/s.  Lower values
@@ -158,6 +164,7 @@ extension Configuration {
         velocityCurve = value(.velocityCurve, fallback.velocityCurve)
         velocitySensitivity = value(.velocitySensitivity, fallback.velocitySensitivity)
         fullScaleSpeed = value(.fullScaleSpeed, fallback.fullScaleSpeed)
+        velocityDamperMs = value(.velocityDamperMs, fallback.velocityDamperMs)
         aftertouchCC = (try? container.decodeIfPresent(Int.self, forKey: .aftertouchCC)) ?? nil
         pitchBendEnabled = value(.pitchBendEnabled, fallback.pitchBendEnabled)
         pitchBendRange = value(.pitchBendRange, fallback.pitchBendRange)

@@ -24,8 +24,14 @@ final class AppModel: ObservableObject {
     @Published private(set) var soundingNotes = 0
     @Published private(set) var captureState: KeyboardCapture.State = .off
     @Published private(set) var lastNote: (key: Int, note: Int, velocity: Int)?
+    @Published private(set) var peakStrikeSpeed: Double = 0
+    @Published private(set) var lastStrike: (speed: Double, velocity: Int)?
+    /// Recent (strike speed, resulting velocity) pairs, for the tuning plot.
+    @Published private(set) var strikeHistory: [(speed: Double, velocity: Int)] = []
 
     @Published var isMeasuringRest = false
+    @Published private(set) var isMeasuringRange = false
+    @Published private(set) var measuredKeyCount = 0
     @Published var calibrationProgress: Double = 0
 
     let midi = MIDIEngine()
@@ -37,8 +43,6 @@ final class AppModel: ObservableObject {
     private var restSamples = [[Double]]()
     private var restWindowEnd: Date?
     private var rangeMin = [Double](repeating: 4096, count: MAD60.keyCount)
-    private var rangeEnd: Date?
-    private var rangeDuration: TimeInterval = 10
     private var meterTimer: Timer?
 
     init() {
@@ -59,12 +63,20 @@ final class AppModel: ObservableObject {
         }
 
         engine.onTelemetry = { [weak self] snapshot in
-            self?.telemetry = snapshot
+            guard let self else { return }
+            self.telemetry = snapshot
+            self.peakStrikeSpeed = self.engine.peakStrikeSpeed
+            self.lastStrike = (self.engine.lastStrikeSpeed, self.engine.lastVelocity)
         }
 
-        engine.onNoteFired = { [weak self] index, note, velocity in
+        engine.onNoteFired = { [weak self] index, note, velocity, speed in
             DispatchQueue.main.async {
-                self?.lastNote = (index, note, velocity)
+                guard let self else { return }
+                self.lastNote = (index, note, velocity)
+                self.strikeHistory.append((speed, velocity))
+                if self.strikeHistory.count > 60 {
+                    self.strikeHistory.removeFirst(self.strikeHistory.count - 60)
+                }
             }
         }
 
@@ -159,6 +171,13 @@ final class AppModel: ObservableObject {
         store.writeDiagnostics(payload)
     }
 
+    func resetPeakStrike() {
+        engine.resetPeakStrike()
+        peakStrikeSpeed = 0
+        lastStrike = nil
+        strikeHistory.removeAll()
+    }
+
     func openInputMonitoringSettings() {
         KeyboardCapture.openInputMonitoringSettings()
     }
@@ -181,16 +200,23 @@ final class AppModel: ObservableObject {
             }
         }
 
-        if let end = rangeEnd, wall < end {
+        if isMeasuringRange {
+            var measured = 0
             for index in 0..<MAD60.keyCount {
-                let v = Double(values[index])
-                guard v > 0, v < Double(MAD60.emptyADC) else { continue }
-                if v < rangeMin[index] { rangeMin[index] = v }
+                let value = Double(values[index])
+                guard value > 0, value < Double(MAD60.emptyADC) else { continue }
+                if value < rangeMin[index] { rangeMin[index] = value }
+                if let calibration = configuration.calibration[index],
+                   rangeMin[index] < calibration.rest - 150 {
+                    measured += 1
+                }
             }
-            let remaining = end.timeIntervalSinceNow
-            let progress = max(0, min(1, 1 - remaining / rangeDuration))
-            if Int(progress * 100) != Int(calibrationProgress * 100) {
-                DispatchQueue.main.async { [weak self] in self?.calibrationProgress = progress }
+            if measured != measuredKeyCount {
+                let progress = Double(measured) / Double(KeyLayout.positions.count)
+                DispatchQueue.main.async { [weak self] in
+                    self?.measuredKeyCount = measured
+                    self?.calibrationProgress = progress
+                }
             }
         }
 
@@ -235,20 +261,28 @@ final class AppModel: ObservableObject {
 
     // MARK: full-travel calibration
 
-    func beginRangeMeasurement(duration: TimeInterval = 10) {
+    /// Starts an open-ended full-travel pass.  There is no timer: press every key
+    /// at your own pace and then call `finishRangeMeasurement()`.
+    func beginRangeMeasurement() {
         rangeMin = [Double](repeating: 4096, count: MAD60.keyCount)
-        rangeDuration = duration
-        rangeEnd = Date().addingTimeInterval(duration)
+        isMeasuringRange = true
+        measuredKeyCount = 0
         calibrationProgress = 0
-        activity = "Press every key all the way down…"
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.05) { [weak self] in
-            self?.finishRangeMeasurement()
-        }
+        activity = "Press every key all the way down, then press Finish"
     }
 
-    private func finishRangeMeasurement() {
-        rangeEnd = nil
-        calibrationProgress = 1
+    func cancelRangeMeasurement() {
+        guard isMeasuringRange else { return }
+        isMeasuringRange = false
+        rangeMin = [Double](repeating: 4096, count: MAD60.keyCount)
+        measuredKeyCount = 0
+        calibrationProgress = 0
+        activity = "Full-travel calibration cancelled"
+    }
+
+    func finishRangeMeasurement() {
+        guard isMeasuringRange else { return }
+        isMeasuringRange = false
         var config = configuration
         var updated = 0
         for index in 0..<MAD60.keyCount {
@@ -257,12 +291,17 @@ final class AppModel: ObservableObject {
             let bottom = min(rangeMin[index], existing.rest - 100)
             guard existing.rest - bottom > 150 else { continue }
             config.calibration[index] = KeyCalibration(rest: existing.rest, bottom: bottom)
-            engine.setSpan(index: index, span: existing.rest - bottom)
             updated += 1
         }
         configuration = config
+        for index in 0..<MAD60.keyCount {
+            if let calibration = config.calibration[index] {
+                engine.setSpan(index: index, span: calibration.span)
+            }
+        }
         engine.update(configuration: config)
         activity = "Travel range updated for \(updated) keys"
+        measuredKeyCount = updated
     }
 
     // MARK: mapping
