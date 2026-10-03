@@ -87,7 +87,7 @@ enum VelocitySource: String, Codable, CaseIterable, Identifiable {
 // MARK: - Configuration
 
 struct Configuration: Codable {
-    var version = 1
+    var version = 2
 
     // MIDI
     var sourceName = "MAD60 Magnetic Keys"
@@ -129,6 +129,42 @@ struct Configuration: Codable {
     var calibration: [Int: KeyCalibration] = [:]
 
     var engineEnabled = true
+
+    /// Take exclusive ownership of the MAD60's keyboard collection so playing
+    /// keys does not type into the focused app.  Off by default because macOS
+    /// gates this behind the Input Monitoring permission.
+    var silenceKeyboard = false
+}
+
+extension Configuration {
+    /// Tolerant decoding: every field falls back to its default, so a config
+    /// written by an older build keeps working after the model grows.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let fallback = Configuration()
+        func value<T: Decodable>(_ key: CodingKeys, _ or: T) -> T {
+            (try? container.decodeIfPresent(T.self, forKey: key)) .flatMap { $0 } ?? or
+        }
+        version = value(.version, fallback.version)
+        sourceName = value(.sourceName, fallback.sourceName)
+        globalChannel = value(.globalChannel, fallback.globalChannel)
+        actuation = value(.actuation, fallback.actuation)
+        release = value(.release, fallback.release)
+        defaultTravelSpan = value(.defaultTravelSpan, fallback.defaultTravelSpan)
+        velocitySource = value(.velocitySource, fallback.velocitySource)
+        fixedVelocity = value(.fixedVelocity, fallback.fixedVelocity)
+        velocityCurve = value(.velocityCurve, fallback.velocityCurve)
+        velocitySensitivity = value(.velocitySensitivity, fallback.velocitySensitivity)
+        fullScaleSpeed = value(.fullScaleSpeed, fallback.fullScaleSpeed)
+        aftertouchCC = (try? container.decodeIfPresent(Int.self, forKey: .aftertouchCC)) ?? nil
+        pitchBendEnabled = value(.pitchBendEnabled, fallback.pitchBendEnabled)
+        pitchBendRange = value(.pitchBendRange, fallback.pitchBendRange)
+        pitchBendStart = value(.pitchBendStart, fallback.pitchBendStart)
+        mappings = value(.mappings, fallback.mappings)
+        calibration = value(.calibration, fallback.calibration)
+        engineEnabled = value(.engineEnabled, fallback.engineEnabled)
+        silenceKeyboard = value(.silenceKeyboard, fallback.silenceKeyboard)
+    }
 }
 
 struct KeyCalibration: Codable, Hashable {
@@ -245,10 +281,16 @@ final class ConfigStore {
 
     func load() -> Configuration {
         guard let data = try? Data(contentsOf: fileURL),
-              let config = try? JSONDecoder().decode(Configuration.self, from: data) else {
+              var config = try? JSONDecoder().decode(Configuration.self, from: data) else {
             var fresh = Configuration()
             fresh.mappings = Presets.piano()
             return fresh
+        }
+        if config.version < 2 {
+            // v1 silenced the keyboard through the HID event system.  Never carry
+            // that over automatically.
+            config.silenceKeyboard = false
+            config.version = 2
         }
         return config
     }

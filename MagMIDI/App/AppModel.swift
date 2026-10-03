@@ -22,6 +22,7 @@ final class AppModel: ObservableObject {
     @Published var learnTarget: Int?
     @Published var activity: String = ""
     @Published private(set) var soundingNotes = 0
+    @Published private(set) var captureState: KeyboardCapture.State = .off
     @Published private(set) var lastNote: (key: Int, note: Int, velocity: Int)?
 
     @Published var isMeasuringRest = false
@@ -29,6 +30,7 @@ final class AppModel: ObservableObject {
 
     let midi = MIDIEngine()
     let hid = MAD60HID()
+    let keyboardCapture = KeyboardCapture()
     private let engine: TravelEngine
     private let store = ConfigStore.shared
     private var saveWorkItem: DispatchWorkItem?
@@ -77,8 +79,15 @@ final class AppModel: ObservableObject {
             self.activity = "Learned \(KeyAction.noteName(note)) for \(KeyLayout.label(at: target))"
         }
 
+        keyboardCapture.onStateChange = { [weak self] state in
+            self?.captureState = state
+        }
+
         hid.start()
         startMIDI()
+        if loaded.silenceKeyboard {
+            keyboardCapture.activate()
+        }
         activity = "Scanning USB for MAD60…"
 
         meterTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -108,6 +117,25 @@ final class AppModel: ObservableObject {
     func restartMIDI() {
         stopMIDI()
         startMIDI()
+    }
+
+    // MARK: keyboard capture
+
+    func setSilenceKeyboard(_ enabled: Bool) {
+        var config = configuration
+        config.silenceKeyboard = enabled
+        configuration = config
+        if enabled {
+            keyboardCapture.activate()
+            activity = "Capturing the MAD60's keyboard output"
+        } else {
+            keyboardCapture.deactivate()
+            activity = "Keyboard left as a normal keyboard"
+        }
+    }
+
+    func openInputMonitoringSettings() {
+        KeyboardCapture.openInputMonitoringSettings()
     }
 
     func panic() {

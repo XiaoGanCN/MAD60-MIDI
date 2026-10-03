@@ -44,6 +44,28 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Card(title: "Keyboard", systemImage: "keyboard") {
+                    Toggle("Play MIDI only — stop the MAD60 from typing", isOn: Binding(
+                        get: { model.configuration.silenceKeyboard },
+                        set: { model.setSilenceKeyboard($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    Text(model.captureState.description)
+                        .font(.system(size: 11))
+                        .foregroundStyle(model.captureState.isCapturing ? Color.secondary : Color.orange)
+                    if model.captureState == .permissionNeeded {
+                        HStack {
+                            Button("Open Input Monitoring…") { model.openInputMonitoringSettings() }
+                            Text("then quit and reopen MagMIDI")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("Implemented by taking exclusive ownership of the keyboard collection for as long as MagMIDI runs; the grab is released on quit. macOS gates this behind the Input Monitoring permission, so it is off by default.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
                 Card(title: "Travel model", systemImage: "ruler") {
                     LabeledSlider(
                         title: "Fallback full travel",
@@ -87,7 +109,7 @@ struct SettingsView: View {
                         Text("Reads live per-key ADC values straight from the keyboard's raw HID interface (usage page 0xFF60, usage 0x61) using the command the vendor's own web configurator uses (0x02 0x96 0x16).  A full 70-position scan takes about 4 ms, so travel is sampled roughly 250 times a second.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                        Text("Apple silicon · macOS 14 or later · no kernel extension, no Input Monitoring, no Accessibility permission.")
+                        Text("Apple silicon · macOS 14 or later · no kernel extension and no Accessibility permission. Reading key travel needs no permission; only the optional “Play MIDI only” keyboard capture uses Input Monitoring.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }

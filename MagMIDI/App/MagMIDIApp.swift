@@ -10,8 +10,9 @@ struct MagMIDIApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(model)
-                .frame(minWidth: 1040, minHeight: 700)
+                .frame(minWidth: 1120, minHeight: 700)
         }
+        .defaultSize(width: 1340, height: 880)
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) { }

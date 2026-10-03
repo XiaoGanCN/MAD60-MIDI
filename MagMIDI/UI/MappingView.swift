@@ -30,7 +30,7 @@ struct MappingView: View {
                 }
                 .padding(20)
             }
-            .frame(minWidth: 620)
+            .frame(minWidth: 520, maxWidth: .infinity)
 
             Divider()
 
@@ -45,7 +45,7 @@ struct MappingView: View {
                         .padding(40)
                 }
             }
-            .frame(width: 320)
+            .frame(minWidth: 300, idealWidth: 340, maxWidth: 380)
         }
     }
 

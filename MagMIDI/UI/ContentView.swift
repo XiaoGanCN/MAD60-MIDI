@@ -58,14 +58,9 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                Spacer(minLength: 0)
-            }
-            .padding(8)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .navigationSplitViewColumnWidth(min: 190, ideal: 200, max: 240)
-            .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 6) {
-                    Divider()
+                Spacer(minLength: 12)
+                Divider()
+                VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
                         Circle()
                             .fill(model.status.isConnected ? Color.green : Color.orange)
@@ -73,12 +68,23 @@ struct ContentView: View {
                         Text(model.status.isConnected ? "MAD60 connected" : "Searching…")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                        Spacer()
+                            .lineLimit(1)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
+                    HStack(spacing: 6) {
+                        Image(systemName: model.captureState.isCapturing ? "lock.fill" : "keyboard")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                        Text(model.captureState.isCapturing ? "Keys play MIDI only" : "Keys also type")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
                 }
+                .padding(.horizontal, 4)
             }
+            .padding(10)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 260)
         } detail: {
             Group {
                 switch selection {
@@ -194,6 +200,37 @@ struct DashboardView: View {
                             Text("vel \(model.telemetry[index].velocity)")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Card(title: "Keyboard capture", systemImage: model.captureState.isCapturing ? "lock.fill" : "lock.open") {
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Toggle("Play MIDI only — stop the MAD60 from typing", isOn: Binding(
+                                get: { model.configuration.silenceKeyboard },
+                                set: { model.setSilenceKeyboard($0) }
+                            ))
+                            .toggleStyle(.switch)
+                            Text(model.captureState.description)
+                                .font(.system(size: 11))
+                                .foregroundStyle(model.captureState.isCapturing ? Color.secondary : Color.orange)
+                            Text("MagMIDI takes exclusive ownership of the keyboard collection that carries keystrokes, so notes you play never reach the focused app. The grab is released the moment you switch this off or quit MagMIDI. macOS asks for Input Monitoring the first time.")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        if model.captureState.isCapturing {
+                            StatusPill(text: "Captured", color: .green, symbol: "checkmark.circle")
+                        } else if model.captureState == .permissionNeeded {
+                            VStack(alignment: .trailing, spacing: 6) {
+                                Button("Open Input Monitoring…") { model.openInputMonitoringSettings() }
+                                    .buttonStyle(.borderedProminent)
+                                Text("Then quit and reopen MagMIDI")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }

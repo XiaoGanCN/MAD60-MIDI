@@ -221,6 +221,26 @@ gated by Input Monitoring — verified: with permission denied, `IOHIDDeviceOpen
 interface 2 returned `kIOReturnSuccess` while interfaces 0 and 1 returned
 `kIOReturnNotPermitted`.)
 
+### Suppressing the keyboard output
+
+Reading analogue travel does not stop the board from typing.  Two mechanisms were
+investigated:
+
+* **Seizing the HID device** — `IOHIDDeviceOpen` with `kIOHIDOptionsTypeSeizeDevice`.
+  This takes exclusive ownership for the lifetime of the process and is released
+  automatically on quit or crash.  Verified on hardware: the collection at primary
+  usage `0x01/0x02` (which carries the NKRO keystrokes) **can** be seized from user
+  space once Input Monitoring is granted, while `0x01/0x06` returns
+  `kIOReturnNotPrivileged` because macOS reserves it for the system keyboard.  That
+  reserved collection sends only zeroed reports on this board, so ignoring it is
+  harmless.  This is what MagMIDI uses.
+* **`UserKeyMapping` via the HID event system** — `hidutil property --matching …
+  --set '{"UserKeyMapping": …}'`, or the same write to an `IOHIDEventService` through
+  `IORegistryEntrySetCFProperty`.  A single-entry mapping does suppress a key, but it
+  mutates shared system state that outlives the process, and a bulk write of all 228
+  keyboard usages destabilised the HID event stack (WindowServer went down).  It was
+  abandoned; `tools/keyrestore.swift` clears any mapping left behind.
+
 ## 7. Reproducing the capture
 
 ```bash

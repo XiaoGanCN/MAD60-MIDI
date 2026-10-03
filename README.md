@@ -25,9 +25,13 @@ understands.  MagMIDI does exactly that:
   threshold and MagMIDI bends pitch and/or streams an expression CC.
 * **Everything is re-mappable.**  Any physical key can be a note, a control change, a
   program change, a pitch-bend source, or nothing at all.
-* **Nothing to install.**  No driver, no background daemon, no kernel extension, and
-  no privacy permissions — the analogue channel is a vendor HID collection, not a
-  keyboard collection.
+* **Nothing to install.**  No driver, no background daemon and no kernel extension.
+  Reading key travel needs no privacy permission at all, because the analogue data
+  lives in a vendor HID collection rather than the keyboard collection.
+* **Optional "Play MIDI only" mode.**  Because the MAD60 is still a normal keyboard,
+  playing it also types into whatever has focus.  MagMIDI can take exclusive
+  ownership of its keyboard collection so the notes never reach your DAW.  That one
+  feature needs the Input Monitoring permission, so it is off by default.
 
 ## Requirements
 
@@ -111,8 +115,11 @@ commands the vendor's own configurator uses for calibration, is documented in
 * Key labels describe **physical matrix positions**.  If you have re-mapped keys in the
   vendor's editor, the labels still refer to the physical key; the analogue positions
   are unaffected by keymap changes.
-* The MAD60 continues to type normally while MagMIDI runs — the app listens to the
-  vendor analogue channel and does not capture or block keystrokes.
+* By default the MAD60 continues to type while MagMIDI runs.  Switch on *Play MIDI
+  only* (Overview or Settings) to stop that; macOS will ask for Input Monitoring the
+  first time, and the keyboard is released again as soon as you switch the option
+  off or quit MagMIDI.  Because the app is ad-hoc signed, the grant is tied to the
+  build, so you may need to re-grant after rebuilding it yourself.
 * The *Peak depth* velocity mode deliberately adds about 20 ms of latency while a key
   settles.  *Strike speed* is the default and has no such cost.
 
@@ -129,6 +136,8 @@ tools/                   reverse-engineering and verification utilities
   madanalog.swift        live per-key ADC reader
   madtrain.swift         pair analogue indices with HID keycodes
   madguide.swift         guided, deterministic key-map calibration
+  seizetest.swift        shows whether the keyboard collection can be seized (--probe is read-only)
+  keyrestore.swift       recovery: clears any stray HID key mapping on the MAD60
   cdp_hid_sniff.py       Chrome DevTools WebHID sniffer (how the protocol was found)
   midimon.swift          Core MIDI monitor used for end-to-end verification
   makeicon.swift         renders the app icon
