@@ -50,7 +50,7 @@ func makeIcon(_ size: Int) -> CGImage? {
     let wave = CGMutablePath()
     let waveLeft = s * 0.19
     let waveRight = s * 0.81
-    let waveCentre = s * 0.63
+    let waveCentre = s * 0.66
     let amplitude = s * 0.072
     let steps = 80
     wave.move(to: CGPoint(x: waveLeft, y: waveCentre))
@@ -69,17 +69,20 @@ func makeIcon(_ size: Int) -> CGImage? {
     ctx.strokePath()
 
     // Piano keyboard along the bottom.
+    // The keyboard is sized to the flat part of the squircle's bottom edge and
+    // drawn a little past the canvas, so the clip leaves the keys flush with the
+    // bottom of the icon rather than floating above it.
     let whiteCount = 6
-    let keyboardLeft = s * 0.175
-    let keyboardWidth = s * 0.65
-    let gap = s * 0.016
+    let keyboardLeft = s * 0.235
+    let keyboardWidth = s * 0.53
+    let gap = s * 0.014
     let keyWidth = (keyboardWidth - gap * CGFloat(whiteCount - 1)) / CGFloat(whiteCount)
-    let keyBottom = s * 0.155
-    let whiteHeight = s * 0.265
+    let keyBottom = -s * 0.03
+    let whiteHeight = s * 0.33
 
     for index in 0..<whiteCount {
         // Slight height variation so it reads as keys rather than one block.
-        let factor = 0.88 + 0.12 * Double((index * 3) % 5) / 4.0
+        let factor = 0.92 + 0.08 * Double((index * 3) % 5) / 4.0
         let height = whiteHeight * CGFloat(factor)
         let rect = CGRect(x: keyboardLeft + CGFloat(index) * (keyWidth + gap),
                           y: keyBottom, width: keyWidth, height: height)
@@ -91,7 +94,7 @@ func makeIcon(_ size: Int) -> CGImage? {
     }
 
     // Black keys sit between the white ones, hanging from their top edge.
-    let blackHeight = whiteHeight * 0.62
+    let blackHeight = whiteHeight * 0.60
     for index in [0, 1, 3, 4] where index < whiteCount - 1 {
         let centre = keyboardLeft + CGFloat(index + 1) * (keyWidth + gap) - gap * 0.5
         let rect = CGRect(x: centre - keyWidth * 0.29,
