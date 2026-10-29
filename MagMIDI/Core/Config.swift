@@ -245,9 +245,10 @@ enum Presets {
         return map
     }
 
-    /// Captured from the running configuration on 2026-10-29 — 38 keys: 37 notes (C3–G5), 1 CC.
-    /// Kept verbatim so the layout can be recalled after trying other presets.
-    static func custom() -> [Int: KeyAction] {
+    /// "FL like" — captured from the running configuration on 2026-10-29:
+    /// 38 keys, 37 notes spanning C3–G5, plus CC 1 on the "1" key.  Kept verbatim
+    /// so the layout can be recalled after trying other presets.
+    static func flLike() -> [Int: KeyAction] {
         var map: [Int: KeyAction] = [:]
         map[1] = KeyAction(kind: .cc, number: 1, channel: 1, continuous: true)
         map[2] = KeyAction(kind: .note, number: 61, channel: 1)
@@ -295,14 +296,14 @@ enum Presets {
 }
 
 enum PresetKind: String, CaseIterable, Identifiable {
-    case piano, chromatic, drums, custom, empty
+    case piano, chromatic, drums, flLike, empty
     var id: String { rawValue }
     var title: String {
         switch self {
         case .piano: return "Piano"
         case .chromatic: return "Chromatic"
         case .drums: return "Drum pads"
-        case .custom: return "Custom"
+        case .flLike: return "FL like"
         case .empty: return "Empty"
         }
     }
@@ -311,7 +312,7 @@ enum PresetKind: String, CaseIterable, Identifiable {
         case .piano: return Presets.piano()
         case .chromatic: return Presets.chromatic()
         case .drums: return Presets.drums()
-        case .custom: return Presets.custom()
+        case .flLike: return Presets.flLike()
         case .empty: return Presets.empty()
         }
     }
