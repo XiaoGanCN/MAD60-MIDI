@@ -11,14 +11,25 @@ struct MappingView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Card(title: "Presets", systemImage: "square.stack.3d.up") {
-                        HStack(spacing: 8) {
-                            ForEach(PresetKind.allCases) { kind in
-                                Button(kind.title) { model.applyPreset(kind) }
-                                    .buttonStyle(.bordered)
+                        // Five presets plus import/export no longer fit on one
+                        // line at the narrowest window, so let it wrap instead
+                        // of clipping the last buttons.
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 8) {
+                                presetButtons
+                                Spacer(minLength: 0)
+                                transferButtons
                             }
-                            Spacer()
-                            Button("Export…") { exportConfig() }
-                            Button("Import…") { importConfig() }
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 8) {
+                                    presetButtons
+                                    Spacer(minLength: 0)
+                                }
+                                HStack(spacing: 8) {
+                                    transferButtons
+                                    Spacer(minLength: 0)
+                                }
+                            }
                         }
                     }
                     Card(title: "Keyboard", systemImage: "keyboard") {
@@ -47,6 +58,21 @@ struct MappingView: View {
             }
             .frame(minWidth: 300, idealWidth: 340, maxWidth: 380)
         }
+    }
+
+    @ViewBuilder private var presetButtons: some View {
+        ForEach(PresetKind.allCases) { kind in
+            Button(kind.title) { model.applyPreset(kind) }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+    }
+
+    @ViewBuilder private var transferButtons: some View {
+        Button("Export…") { exportConfig() }
+            .controlSize(.small)
+        Button("Import…") { importConfig() }
+            .controlSize(.small)
     }
 
     private func exportConfig() {

@@ -245,18 +245,64 @@ enum Presets {
         return map
     }
 
+    /// Captured from the running configuration on 2026-10-29 — 38 keys: 37 notes (C3–G5), 1 CC.
+    /// Kept verbatim so the layout can be recalled after trying other presets.
+    static func custom() -> [Int: KeyAction] {
+        var map: [Int: KeyAction] = [:]
+        map[1] = KeyAction(kind: .cc, number: 1, channel: 1, continuous: true)
+        map[2] = KeyAction(kind: .note, number: 61, channel: 1)
+        map[3] = KeyAction(kind: .note, number: 63, channel: 1)
+        map[5] = KeyAction(kind: .note, number: 66, channel: 1)
+        map[6] = KeyAction(kind: .note, number: 68, channel: 1)
+        map[7] = KeyAction(kind: .note, number: 70, channel: 1)
+        map[9] = KeyAction(kind: .note, number: 73, channel: 1)
+        map[10] = KeyAction(kind: .note, number: 75, channel: 1)
+        map[12] = KeyAction(kind: .note, number: 78, channel: 1)
+        map[15] = KeyAction(kind: .note, number: 60, channel: 1)
+        map[16] = KeyAction(kind: .note, number: 62, channel: 1)
+        map[17] = KeyAction(kind: .note, number: 64, channel: 1)
+        map[18] = KeyAction(kind: .note, number: 65, channel: 1)
+        map[19] = KeyAction(kind: .note, number: 67, channel: 1)
+        map[20] = KeyAction(kind: .note, number: 69, channel: 1)
+        map[21] = KeyAction(kind: .note, number: 71, channel: 1)
+        map[22] = KeyAction(kind: .note, number: 72, channel: 1)
+        map[23] = KeyAction(kind: .note, number: 74, channel: 1)
+        map[24] = KeyAction(kind: .note, number: 76, channel: 1)
+        map[25] = KeyAction(kind: .note, number: 77, channel: 1)
+        map[26] = KeyAction(kind: .note, number: 79, channel: 1)
+        map[30] = KeyAction(kind: .note, number: 49, channel: 1)
+        map[31] = KeyAction(kind: .note, number: 51, channel: 1)
+        map[33] = KeyAction(kind: .note, number: 54, channel: 1)
+        map[34] = KeyAction(kind: .note, number: 56, channel: 1)
+        map[35] = KeyAction(kind: .note, number: 58, channel: 1)
+        map[37] = KeyAction(kind: .note, number: 61, channel: 1)
+        map[38] = KeyAction(kind: .note, number: 63, channel: 1)
+        map[44] = KeyAction(kind: .note, number: 48, channel: 1)
+        map[45] = KeyAction(kind: .note, number: 50, channel: 1)
+        map[46] = KeyAction(kind: .note, number: 52, channel: 1)
+        map[47] = KeyAction(kind: .note, number: 53, channel: 1)
+        map[48] = KeyAction(kind: .note, number: 55, channel: 1)
+        map[49] = KeyAction(kind: .note, number: 57, channel: 1)
+        map[50] = KeyAction(kind: .note, number: 59, channel: 1)
+        map[51] = KeyAction(kind: .note, number: 60, channel: 1)
+        map[52] = KeyAction(kind: .note, number: 62, channel: 1)
+        map[53] = KeyAction(kind: .note, number: 64, channel: 1)
+        return map
+    }
+
     /// Everything unassigned.
     static func empty() -> [Int: KeyAction] { [:] }
 }
 
 enum PresetKind: String, CaseIterable, Identifiable {
-    case piano, chromatic, drums, empty
+    case piano, chromatic, drums, custom, empty
     var id: String { rawValue }
     var title: String {
         switch self {
         case .piano: return "Piano"
         case .chromatic: return "Chromatic"
         case .drums: return "Drum pads"
+        case .custom: return "Custom"
         case .empty: return "Empty"
         }
     }
@@ -265,6 +311,7 @@ enum PresetKind: String, CaseIterable, Identifiable {
         case .piano: return Presets.piano()
         case .chromatic: return Presets.chromatic()
         case .drums: return Presets.drums()
+        case .custom: return Presets.custom()
         case .empty: return Presets.empty()
         }
     }

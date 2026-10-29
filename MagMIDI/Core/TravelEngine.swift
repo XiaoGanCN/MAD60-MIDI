@@ -16,6 +16,8 @@ struct KeyTelemetry {
     var peak: Double = 0
     /// Most recent strike speed, in travel-fractions per second.
     var speed: Double = 0
+    /// Raw ADC reading for this position, in counts.
+    var raw: Int = 0
 }
 
 final class TravelEngine {
@@ -312,6 +314,7 @@ final class TravelEngine {
             }
 
             if state.isDown { deepestHeldTravel = max(deepestHeldTravel, travel) }
+            telemetry[index].raw = Int(raw)
             telemetry[index].travel = travel
             telemetry[index].isDown = state.isDown
             telemetry[index].velocity = state.velocity
